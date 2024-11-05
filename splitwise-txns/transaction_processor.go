@@ -41,7 +41,7 @@ type Transaction struct {
 	Date        string
 	Description string
 	Amount      float64
-	Split       string
+	Split       int
 	Category    Category
 	SplitID     string
 }
@@ -146,7 +146,7 @@ func (tp *TransactionProcessor) displayAndProcessTransaction(t *Transaction, lin
 	}
 
 	if split == 0 {
-		t.Split = "skipped"
+		t.Split = 0
 		fmt.Println("Transaction skipped")
 		return nil
 	} else {

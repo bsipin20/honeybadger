@@ -44,6 +44,7 @@ func main() {
             os.Exit(1)
         }
         return
+
     } else {
 
 		inputFile := flag.Arg(0)
