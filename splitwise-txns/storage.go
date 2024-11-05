@@ -1,53 +1,62 @@
-
 package main
 
+import (
+	"encoding/csv"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strconv"
+)
+
 type HeaderConfig struct {
-    Names    []string
-    DatePos  int
-    DescPos  int
-    AmtPos   int
-    CatPos   int
-    SplitPos int
+	Names    []string
+	DatePos  int
+	DescPos  int
+	AmtPos   int
+	CatPos   int
+	SplitPos int
 }
 
-var DefaultHeaders = HeaderCOnfig{
-	Names: []string{"Date", "Description", "Amount", "Category", "Split"},
-	DatePos: 0,
-	DescPos: 1,
-	AmtPos: 2,
-	CatPos: 3,
+var DefaultHeaders = HeaderConfig{
+	Names:    []string{"Date", "Description", "Amount", "Category", "Split"},
+	DatePos:  0,
+	DescPos:  1,
+	AmtPos:   2,
+	CatPos:   3,
 	SplitPos: 4,
 }
 
 type TransactionStore interface {
-	ReadTransactions(filename string) ([]Transaction, error)
-	WriteTransactions(filename string, transactions []model.Transaction) error
-	UpdateTransaction(filename string, id string, transaction model.Transaction)
+	ReadTransactions() ([]Transaction, error)
+	SaveTransaction(transaction Transaction) error
+	//	UpdateTransaction(filename string, id string, transaction model.Transaction)
 }
 
 type Transaction struct {
 	Date        string
 	Description string
 	Amount      float64
-	Split       int
+	Split       float64
 	Category    Category
 	SplitID     string
 }
 
 type CSVStore struct {
-	headers HeaderConfig
-
+	fileManager *FileManager
+	headers     HeaderConfig
 }
 
-//TODO implement option to write files to directory based on project name
-func NewCSVStore(headers HeaderConfig) *CSVStore {
+// TODO implement option to write files to directory based on project name
+func NewCSVStore(fm *FileManager) *CSVStore {
 	return &CSVStore{
-		headers: headers,
+		fileManager: fm,
+		headers:     DefaultHeaders,
 	}
 }
 
-func (s *CSVStore) ReadTransactions(filename string) ([]Tranmsaction, error) {
-	file, err := os.Open(filename)
+func (s *CSVStore) ReadTransactions() ([]Transaction, error) {
+	file, err := os.Open(s.fileManager.InputPath)
+
 	if err != nil {
 		return nil, fmt.Errorf("error opening new ile %w", err)
 	}
@@ -56,14 +65,13 @@ func (s *CSVStore) ReadTransactions(filename string) ([]Tranmsaction, error) {
 
 	reader := csv.NewReader(file)
 
-
 	header, err := reader.Read()
 
 	if err != nil {
 		return nil, fmt.Errorf("error reading header: %w", err)
 	}
 
-	if err := validateHeader(header); err != nil {
+	if err := s.validateHeader(header); err != nil {
 		return nil, err
 	}
 
@@ -78,7 +86,7 @@ func (s *CSVStore) ReadTransactions(filename string) ([]Tranmsaction, error) {
 			return nil, fmt.Errorf("error reading record: %w", err)
 		}
 
-		transaction, err := parseTransaction(record)
+		transaction, err := s.parseTransaction(record)
 
 		if err != nil {
 			return nil, fmt.Errorf("error parsing record: %w", err)
@@ -90,9 +98,8 @@ func (s *CSVStore) ReadTransactions(filename string) ([]Tranmsaction, error) {
 	return transactions, nil
 }
 
-
-func (s *CSVStore) SaveTransactions(filename string, transactions []Transaction) error {
-    file, err := os.Create(filename)
+func (s *CSVStore) createOutputFileWithHeaders() error {
+    file, err := os.Create(s.fileManager.OutputPath)
     if err != nil {
         return fmt.Errorf("error creating file: %w", err)
     }
@@ -101,37 +108,91 @@ func (s *CSVStore) SaveTransactions(filename string, transactions []Transaction)
     writer := csv.NewWriter(file)
     defer writer.Flush()
 
-    header := []string{"Date", "Description", "Amount", "Category", "Split"}
-    if err := writer.Write(header); err != nil {
-        return fmt.Errorf("error writing header: %w", err)
-    }
-
-    for _, txn := range transactions {
-        record := []string{
-            txn.Date,
-            txn.Description,
-            fmt.Sprintf("%.2f", txn.Amount),
-            txn.Category,
-            fmt.Sprintf("%.2f", txn.Split),
-        }
-        if err := writer.Write(record); err != nil {
-            return fmt.Errorf("error writing record: %w", err)
-        }
+    headers := []string{"Date", "Description", "Amount", "Category", "Split"}
+    if err := writer.Write(headers); err != nil {
+        return fmt.Errorf("error writing headers: %w", err)
     }
 
     return nil
 }
 
-func (s *CSVStore) validateHeader(header []string) error {
-    if len(header) != len(s.headers.Names) {
-        return fmt.Errorf("invalid header length: expected %d, got %d", len(s.headers.Names), len(header))
+
+func (fm *FileManager) GetCurrentPosition() (int, error) {
+    if _, err := os.Stat(fm.ProgressPath); os.IsNotExist(err) {
+        return 0, nil
     }
-    for i, field := range s.headers.Names {
-        if header[i] != field {
-            return fmt.Errorf("invalid header field at position %d: expected %s, got %s", i, field, header[i])
-        }
+
+    content, err := os.ReadFile(fm.ProgressPath)
+    if err != nil {
+        return 0, fmt.Errorf("error reading progress file: %w", err)
     }
+
+    var position int
+    if _, err := fmt.Sscanf(string(content), "%d", &position); err != nil {
+        return 0, fmt.Errorf("error parsing progress value: %w", err)
+    }
+
+    return position, nil
+}
+
+func (fm *FileManager) SaveProgress(position int) error {
+    dir := filepath.Dir(fm.ProgressPath)
+    if err := os.MkdirAll(dir, 0755); err != nil {
+        return fmt.Errorf("error creating progress directory: %w", err)
+    }
+
+    content := fmt.Sprintf("%d", position)
+    if err := os.WriteFile(fm.ProgressPath, []byte(content), 0644); err != nil {
+        return fmt.Errorf("error writing progress file: %w", err)
+    }
+
+    fm.LastPosition = position
     return nil
+}
+
+func (s *CSVStore) SaveTransaction(transaction Transaction) error {
+	dir := filepath.Dir(s.fileManager.OutputPath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("error creating directory %s: %w", dir, err)
+	}
+
+	if _, err := os.Stat(s.fileManager.OutputPath); os.IsNotExist(err) {
+		if err := s.createOutputFileWithHeaders(); err != nil {
+			return fmt.Errorf("error creating output file: %w", err)
+		}
+	}
+
+	file, err := os.OpenFile(s.fileManager.OutputPath, os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("error opening file for append: %w", err)
+	}
+	defer file.Close()
+
+	writer := csv.NewWriter(file)
+	defer writer.Flush()
+
+	record := []string{
+		transaction.Date,
+		transaction.Description,
+		fmt.Sprintf("%.2f", transaction.Amount),
+		string(transaction.Category),
+		fmt.Sprintf("%.2f", transaction.Split),
+	}
+
+	if err := writer.Write(record); err != nil {
+		return fmt.Errorf("error writing transaction: %w", err)
+	}
+
+	currentPos, err := s.fileManager.GetCurrentPosition()
+	if err != nil {
+		return fmt.Errorf("error getting current position: %w", err)
+	}
+
+	if err := s.fileManager.SaveProgress(currentPos + 1); err != nil {
+		return fmt.Errorf("error saving progress: %w", err)
+	}
+
+	return nil
 }
 
 func (s *CSVStore) parseTransaction(record []string) (Transaction, error) {
@@ -146,28 +207,16 @@ func (s *CSVStore) parseTransaction(record []string) (Transaction, error) {
 	}
 
 	split, err := strconv.ParseFloat(record[s.headers.SplitPos], 64)
-
-	if err != nil {
-		return Transaction{}, fmt.Errorf("invalid split: %w", err)
-	}
+    if err != nil {
+        fmt.Printf("Invalid split input: error converting %s: %v\n", record[s.headers.SplitPos], err)
+        return Transaction{}, err
+    }
 
 	return Transaction{
-		Date: record[s.headers.DatePos],
+		Date:        record[s.headers.DatePos],
 		Description: record[s.headers.DescPos],
-		Amount: amount,
-		Category: record[s.headers.CatPos],
-		Split: split,
+		Amount:      amount,
+		Category:    Category(record[s.headers.CatPos]), //TODO extension of band aid
+		Split:       split,
 	}, nil
 }
-
-type Processor struct {
-	store TransactionStore
-}
-
-func NewTransactionProcessor() *Processor {
-	return &Processor {
-		store: NewCSVStore(),
-	}
-}
-
-
