@@ -17,28 +17,49 @@ func usage() {
 	os.Exit(1)
 }
 
+
+
 func main() {
-	flag.Usage = usage
+    var summarizeFlag bool
+    flag.BoolVar(&summarizeFlag, "summarize", false, "Summarize existing transaction file")
+    
+    flag.Usage = func() {
+        fmt.Fprintf(os.Stderr, "Usage:\n")
+        fmt.Fprintf(os.Stderr, "  %s <input.csv> <output.csv>    # Process transactions\n", os.Args[0])
+        fmt.Fprintf(os.Stderr, "  %s --summarize <output.csv>    # Summarize existing transactions\n\n", os.Args[0])
+        flag.PrintDefaults()
+    }
 
-	flag.Parse()
+    flag.Parse()
 
-	if flag.NArg() != 2 {
-		usage()
-	}
+    if summarizeFlag {
+        if flag.NArg() != 1 {
+            fmt.Println("Error: Please provide the transaction file to summarize")
+            flag.Usage()
+            os.Exit(1)
+        }
 
-	inputFile := flag.Arg(0)
-	outputFile := flag.Arg(1)
+        if err := handleSummarize(flag.Arg(0)); err != nil {
+            fmt.Printf("Error summarizing transactions: %v\n", err)
+            os.Exit(1)
+        }
+        return
+    } else {
 
-	fm := NewFileManager(inputFile, outputFile)
+		inputFile := flag.Arg(0)
+		outputFile := flag.Arg(1)
 
-	if err := fm.Initialize(); err != nil {
-		fmt.Printf("Error initializing file manager: %v\n", err)
-		os.Exit(1)
-	}
+		fm := NewFileManager(inputFile, outputFile)
 
-	processor := NewTransactionProcessor(fm)
-	if err := processor.ProcessTransactions(); err != nil {
-		fmt.Printf("Error processing transactions: %v\n", err)
-		os.Exit(1)
+		if err := fm.Initialize(); err != nil {
+			fmt.Printf("Error initializing file manager: %v\n", err)
+			os.Exit(1)
+		}
+
+		processor := NewTransactionProcessor(fm)
+		if err := processor.ProcessTransactions(); err != nil {
+			fmt.Printf("Error processing transactions: %v\n", err)
+			os.Exit(1)
+		}
 	}
 }

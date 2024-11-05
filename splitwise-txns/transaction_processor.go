@@ -40,9 +40,9 @@ func isValidCategory(input string) (Category, bool) {
 type Transaction struct {
 	Date        string
 	Description string
-	Amount      string
+	Amount      float64
 	Split       string
-	Category    string
+	Category    Category
 	SplitID     string
 }
 
@@ -92,7 +92,7 @@ func (tp *TransactionProcessor) processRemainingTransactions(reader *csv.Reader)
 			return fmt.Errorf("error reading record: %w", err)
 		}
 
-		transaction := tp.createTransaction(record)
+		transaction, err := tp.createTransaction(record)
 
 		if err := tp.displayAndProcessTransaction(&transaction, lineNum); err != nil {
 			return err
@@ -112,13 +112,18 @@ func (tp *TransactionProcessor) processRemainingTransactions(reader *csv.Reader)
 	return nil
 }
 
-func (tp *TransactionProcessor) createTransaction(record []string) Transaction {
+func (tp *TransactionProcessor) createTransaction(record []string) (Transaction, error) {
+  floatVal, err := strconv.ParseFloat(record[2], 64)
+  if err != nil {
+        fmt.Println("Error converting string to float64:", err)
+        return Transaction{} , err
+  }
 	return Transaction{
 		Date:        record[0],
 		Description: record[1],
-		Amount:      record[2],
+		Amount:      floatVal,
 		SplitID:     uuid.New().String(),
-	}
+	}, nil
 }
 
 func (tp *TransactionProcessor) displayAndProcessTransaction(t *Transaction, lineNum int) error {
@@ -167,7 +172,7 @@ func (tp *TransactionProcessor) displayAndProcessTransaction(t *Transaction, lin
 		}
 
 		if category, valid := isValidCategory(input); valid {
-			t.Category = string(category) // Store the full category name
+			t.Category = category
 			fmt.Printf("Recorded category as: %s\n", t.Split)
 			return nil
 		}
@@ -190,9 +195,9 @@ func (tp *TransactionProcessor) saveTransaction(t Transaction) error {
 	if err := writer.Write([]string{
 		t.Date,
 		t.Description,
-		t.Amount,
+    fmt.Sprintf("%.2f", t.Amount),
 		t.Split,
-		t.Category,
+    fmt.Sprint(t.Category),         // Convert to string if needed
 		t.SplitID,
 	}); err != nil {
 		return fmt.Errorf("error writing transaction: %w", err)
