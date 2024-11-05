@@ -64,3 +64,29 @@ func main() {
 		}
 	}
 }
+
+func main() {
+	if len(os.Args) < 2 {
+		usage()
+		os.Exit(1)
+	}
+
+	command := os.Args[1]
+	args := os.Args[2:]
+
+	factory := NewProcessorFactory()
+	processor, err := factory.GetProcessor(command)
+
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		usage()
+		os.Exit(1)
+	}
+
+	if err := processor.Run(args); err != nil {
+		fmt.Printf("Error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+

@@ -158,6 +158,7 @@ func (sf *SummaryFormatter) getSortedCategories(summaries map[Category]CategoryS
     return categories
 }
 
+// entrypoint
 func handleSummarize(filePath string) error {
     reader := NewTransactionReader(filePath)
     summarizer := NewTransactionSummarizer()

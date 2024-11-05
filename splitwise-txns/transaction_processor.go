@@ -197,7 +197,7 @@ func (tp *TransactionProcessor) saveTransaction(t Transaction) error {
 		t.Description,
     fmt.Sprintf("%.2f", t.Amount),
 		t.Split,
-    fmt.Sprint(t.Category),         // Convert to string if needed
+    fmt.Sprint(t.Category),
 		t.SplitID,
 	}); err != nil {
 		return fmt.Errorf("error writing transaction: %w", err)
