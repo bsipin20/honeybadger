@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"path/filepath"
+//	"path/filepath"
 	"sort"
 	"strings"
 )
@@ -23,10 +23,7 @@ type SummarizeProcessor struct {
 }
 
 func NewSummarizeProcessor(projectName string) *SummarizeProcessor {
-	projectDir := filepath.Join("data", projectName)
-	transactionsPath := filepath.Join(projectDir, "transactions.csv")
-
-	fm := NewFileManager(transactionsPath, "")
+	fm := NewFileManager(projectName, "")
 	csvStore := NewCSVStore(fm)
 
 	return &SummarizeProcessor{

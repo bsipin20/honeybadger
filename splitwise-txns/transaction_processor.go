@@ -67,6 +67,10 @@ func (r *StdinReader) ReadString(prompt string) (string, error) {
 
 func NewTransactionProcessor(inputPath string, outputPath string) *TransactionProcessor {
 	fm := NewFileManager(inputPath, outputPath)
+	if err := fm.Initialize(); err != nil {
+		fmt.Printf("Error initializing file manager: %v\n", err)
+		os.Exit(1)
+	}
 	store := NewCSVStore(fm)
 	inputReader := NewStdinReader()
 
@@ -83,7 +87,7 @@ func (tp *TransactionProcessor) Run() error {
 	}
 
 	for _, txn := range transactions {
-		if err := tp.processTransaction(txn); err != nil {
+		if err := tp.processTransaction(&txn); err != nil {
 			return fmt.Errorf("error processing transaction: %w", err)
 		}
 	}
@@ -91,7 +95,7 @@ func (tp *TransactionProcessor) Run() error {
 	return nil
 }
 
-func (tp *TransactionProcessor) processTransaction(txn Transaction) error {
+func (tp *TransactionProcessor) processTransaction(txn *Transaction) error {
 	fmt.Printf("\nTransaction Details:\n")
 	fmt.Printf("Date: %s\n", txn.Date)
 	fmt.Printf("Description: %s\n", txn.Description)
@@ -120,6 +124,7 @@ func (tp *TransactionProcessor) processTransaction(txn Transaction) error {
 
 	txn.Category = category
 	txn.Split = split
+	fmt.Println("YOYOOY")
 	return tp.store.SaveTransaction(txn)
 }
 
