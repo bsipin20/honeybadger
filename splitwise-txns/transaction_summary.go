@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-//	"path/filepath"
+	//	"path/filepath"
 	"sort"
 	"strings"
 )
@@ -55,7 +55,6 @@ func Summarize(transactions []Transaction) *SummaryReport {
 	var totalAmount float64
 
 	for _, txn := range transactions {
-		fmt.Println(txn)
 		summary := summaries[txn.Category]
 		summary.TotalAmount += (txn.Split / 100) * txn.Amount
 		summary.TransactionCount++

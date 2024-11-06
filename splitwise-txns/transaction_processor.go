@@ -125,12 +125,10 @@ func (tp *TransactionProcessor) processTransaction(txn *Transaction) error {
 
 	txn.Category = category
 	txn.Split = split
-	fmt.Println("YOYOOY")
 	return tp.store.SaveTransaction(txn)
 }
 
 func (tp *TransactionProcessor) getCategory() (Category, error) {
-	fmt.Println("\nAvailable categories:")
 	for cat, shortcut := range ValidCategoryShortcuts {
 		fmt.Printf("- %s (or '%s')\n", cat, shortcut)
 	}
@@ -162,19 +160,21 @@ func (tp *TransactionProcessor) createTransaction(record []string) (Transaction,
 	}, nil
 }
 
-
-
 const (
-	CategoryUtilities  Category = "utilities"
-	CategoryGrocery    Category = "grocery"
-	CategoryRestaurant Category = "restaurant"
-	CategorySkipped    Category = "skipped"
+	CategoryUtilities     Category = "utilities"
+	CategoryGrocery       Category = "grocery"
+	CategoryRestaurant    Category = "restaurant"
+	CategorySkipped       Category = "skipped"
+	CategoryEntertainment Category = "entertainemtn"
+	CategoryHome          Category = "home"
 )
 
 var ValidCategoryShortcuts = map[Category]string{
-	CategoryUtilities:  "u",
-	CategoryGrocery:    "g",
-	CategoryRestaurant: "r",
+	CategoryUtilities:     "u",
+	CategoryGrocery:       "g",
+	CategoryRestaurant:    "r",
+	CategoryEntertainment: "e",
+	CategoryHome:          "h",
 }
 
 func validateCategory(input string) (Category, bool) {
@@ -215,4 +215,3 @@ func parseSplitPercentage(input string) (float64, error) {
 
 	return split, nil
 }
-
