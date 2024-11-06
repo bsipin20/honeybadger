@@ -14,7 +14,7 @@ type FileManager struct {
 	headerWritten bool
 }
 
-func NewFileManager(inputPath, outputPath string) *FileManager {
+func NewFileManager(inputPath string, outputPath string) *FileManager {
 	progressPath := outputPath + ".progress"
 	return &FileManager{
 		InputPath:    inputPath,

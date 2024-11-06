@@ -2,10 +2,8 @@ package main
 
 import (
 	"bufio"
-	"encoding/csv"
 	"fmt"
 	"github.com/google/uuid"
-	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -37,173 +35,183 @@ func isValidCategory(input string) (Category, bool) {
 	return "", false
 }
 
-type Transaction struct {
-	Date        string
-	Description string
-	Amount      string
-	Split       string
-	Category    string
-	SplitID     string
-}
-
 type TransactionProcessor struct {
-	fileManager *FileManager
-	scanner     *bufio.Scanner
+	store   TransactionStore
+	scanner UserInputReader
 }
 
-func NewTransactionProcessor(fm *FileManager) *TransactionProcessor {
+type UserInputReader interface {
+	ReadString(prompt string) (string, error)
+}
+
+type StdinReader struct {
+	scanner *bufio.Scanner
+}
+
+func NewStdinReader() *StdinReader {
+	return &StdinReader{
+		scanner: bufio.NewScanner(os.Stdin),
+	}
+}
+
+func (r *StdinReader) ReadString(prompt string) (string, error) {
+	fmt.Print(prompt)
+	if !r.scanner.Scan() {
+		if err := r.scanner.Err(); err != nil {
+			return "", fmt.Errorf("error reading input: %w", err)
+		}
+		return "", fmt.Errorf("no input received")
+	}
+	return r.scanner.Text(), nil
+}
+
+func NewTransactionProcessor(inputPath string, outputPath string) *TransactionProcessor {
+	fm := NewFileManager(inputPath, outputPath)
+	if err := fm.Initialize(); err != nil {
+		fmt.Printf("Error initializing file manager: %v\n", err)
+		os.Exit(1)
+	}
+	store := NewCSVStore(fm)
+	inputReader := NewStdinReader()
+
 	return &TransactionProcessor{
-		fileManager: fm,
-		scanner:     bufio.NewScanner(os.Stdin),
+		store:   store,
+		scanner: inputReader,
 	}
 }
 
-func (tp *TransactionProcessor) ProcessTransactions() error {
-	file, err := os.Open(tp.fileManager.InputPath)
+func (tp *TransactionProcessor) Run() error {
+	rawData := true
+	transactions, err := tp.store.ReadTransactions(rawData)
 	if err != nil {
-		return fmt.Errorf("error opening input file: %w", err)
-	}
-	defer file.Close()
-
-	reader := csv.NewReader(file)
-
-	if _, err := reader.Read(); err != nil {
-		return fmt.Errorf("error reading header: %w", err)
+		return fmt.Errorf("error reading transactions: %w", err)
 	}
 
-	for i := 0; i < tp.fileManager.LastPosition; i++ {
-		if _, err := reader.Read(); err != nil {
-			return fmt.Errorf("error skipping to last position: %w", err)
+	for _, txn := range transactions {
+		if err := tp.processTransaction(&txn); err != nil {
+			return fmt.Errorf("error processing transaction: %w", err)
 		}
 	}
 
-	return tp.processRemainingTransactions(reader)
-}
-
-func (tp *TransactionProcessor) processRemainingTransactions(reader *csv.Reader) error {
-	lineNum := tp.fileManager.LastPosition
-
-	for {
-		record, err := reader.Read()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return fmt.Errorf("error reading record: %w", err)
-		}
-
-		transaction := tp.createTransaction(record)
-
-		if err := tp.displayAndProcessTransaction(&transaction, lineNum); err != nil {
-			return err
-		}
-
-		if err := tp.saveTransaction(transaction); err != nil {
-			return err
-		}
-
-		lineNum++
-		if err := tp.fileManager.saveProgress(lineNum); err != nil {
-			return fmt.Errorf("error saving progress: %w", err)
-		}
-	}
-
-	fmt.Println("\nAll transactions processed!")
 	return nil
 }
 
-func (tp *TransactionProcessor) createTransaction(record []string) Transaction {
-	return Transaction{
-		Date:        record[0],
-		Description: record[1],
-		Amount:      record[2],
-		SplitID:     uuid.New().String(),
-	}
-}
+func (tp *TransactionProcessor) processTransaction(txn *Transaction) error {
+	fmt.Printf("\nTransaction Details:\n")
+	fmt.Printf("Date: %s\n", txn.Date)
+	fmt.Printf("Description: %s\n", txn.Description)
+	fmt.Printf("Amount: %.2f\n", txn.Amount)
 
-func (tp *TransactionProcessor) displayAndProcessTransaction(t *Transaction, lineNum int) error {
-
-	fmt.Printf("\nTransaction #%d:\n", lineNum+1)
-	fmt.Printf("Date: %s\n", t.Date)
-	fmt.Printf("Description: %s\n", t.Description)
-	fmt.Printf("Amount: %s\n", t.Amount)
-
-	fmt.Print("Enter split as % of 100: ")
-
-	if !tp.scanner.Scan() {
-		return fmt.Errorf("error reading split input")
-	}
-
-	splitStr := strings.TrimSpace(tp.scanner.Text())
-	split, err := strconv.ParseFloat(splitStr, 64)
+	splitStr, err := tp.scanner.ReadString("Enter split as % of 100 (0 to skip): ")
 	if err != nil {
-		return fmt.Errorf("invalid split percentage: %v", err)
+		return fmt.Errorf("error reading split: %w", err)
+	}
+
+	split, err := parseSplitPercentage(splitStr)
+	if err != nil {
+		return fmt.Errorf("invalid split percentage: %w", err)
 	}
 
 	if split == 0 {
-		t.Split = "skipped"
-		fmt.Println("Transaction skipped")
-		return nil
-	} else {
-		t.Split = splitStr
+		txn.Category = CategorySkipped
+		txn.Split = 0
+		return tp.store.SaveTransaction(txn)
 	}
 
-	fmt.Println("\nAvailable categories:")
-	for _, cat := range categoryOptions {
-		fmt.Printf("- %s (or '%s')\n", cat.Full, cat.Shortcut)
+	category, err := tp.getCategory()
+	if err != nil {
+		return fmt.Errorf("error getting category: %w", err)
 	}
 
-	for {
-		fmt.Print("\nEnter category: ")
-
-		if !tp.scanner.Scan() {
-			return fmt.Errorf("error reading user input")
-		}
-
-		input := strings.TrimSpace(tp.scanner.Text())
-		if input == "" {
-			fmt.Println("Category cannot be empty. Please try again.")
-			continue
-		}
-
-		if category, valid := isValidCategory(input); valid {
-			t.Category = string(category) // Store the full category name
-			fmt.Printf("Recorded category as: %s\n", t.Split)
-			return nil
-		}
-
-		fmt.Println("Invalid category. Please choose from the available options.")
-		continue
-	}
-
-	return nil
+	txn.Category = category
+	txn.Split = split
+	return tp.store.SaveTransaction(txn)
 }
 
-func (tp *TransactionProcessor) saveTransaction(t Transaction) error {
-	outFile, err := os.OpenFile(tp.fileManager.OutputPath, os.O_APPEND|os.O_WRONLY, 0644)
+func (tp *TransactionProcessor) getCategory() (Category, error) {
+	for cat, shortcut := range ValidCategoryShortcuts {
+		fmt.Printf("- %s (or '%s')\n", cat, shortcut)
+	}
+
+	categoryStr, err := tp.scanner.ReadString("\nEnter category: ")
 	if err != nil {
-		return fmt.Errorf("error opening output file: %w", err)
-	}
-	defer outFile.Close()
-
-	writer := csv.NewWriter(outFile)
-	if err := writer.Write([]string{
-		t.Date,
-		t.Description,
-		t.Amount,
-		t.Split,
-		t.Category,
-		t.SplitID,
-	}); err != nil {
-		return fmt.Errorf("error writing transaction: %w", err)
+		return "", fmt.Errorf("error reading category: %w", err)
 	}
 
-	writer.Flush()
-
-	if err := writer.Error(); err != nil {
-		return fmt.Errorf("error flushing writer: %w", err)
+	category, valid := validateCategory(categoryStr)
+	if !valid {
+		return "", fmt.Errorf("invalid category: %s", categoryStr)
 	}
 
-	fmt.Printf("Split recorded with ID: %s\n", t.SplitID)
-	return nil
+	return category, nil
+}
+
+func (tp *TransactionProcessor) createTransaction(record []string) (Transaction, error) {
+	floatVal, err := strconv.ParseFloat(record[2], 64)
+	if err != nil {
+		fmt.Println("Error converting string to float64:", err)
+		return Transaction{}, err
+	}
+	return Transaction{
+		Date:        record[0],
+		Description: record[1],
+		Amount:      floatVal,
+		SplitID:     uuid.New().String(),
+	}, nil
+}
+
+const (
+	CategoryUtilities     Category = "utilities"
+	CategoryGrocery       Category = "grocery"
+	CategoryRestaurant    Category = "restaurant"
+	CategorySkipped       Category = "skipped"
+	CategoryEntertainment Category = "entertainemtn"
+	CategoryHome          Category = "home"
+)
+
+var ValidCategoryShortcuts = map[Category]string{
+	CategoryUtilities:     "u",
+	CategoryGrocery:       "g",
+	CategoryRestaurant:    "r",
+	CategoryEntertainment: "e",
+	CategoryHome:          "h",
+}
+
+func validateCategory(input string) (Category, bool) {
+	input = strings.ToLower(strings.TrimSpace(input))
+
+	for category := range ValidCategoryShortcuts {
+		if string(category) == input {
+			return category, true
+		}
+	}
+
+	for category, shortcut := range ValidCategoryShortcuts {
+		if shortcut == input {
+			return category, true
+		}
+	}
+
+	return "", false
+}
+
+func parseSplitPercentage(input string) (float64, error) {
+	input = strings.TrimSpace(input)
+
+	if input == "" {
+		return 0, fmt.Errorf("split percentage cannot be empty")
+	}
+
+	input = strings.TrimSuffix(input, "%")
+
+	split, err := strconv.ParseFloat(input, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid split percentage format: %w", err)
+	}
+
+	if split < 0 || split > 100 {
+		return 0, fmt.Errorf("split percentage must be between 0 and 100")
+	}
+
+	return split, nil
 }
