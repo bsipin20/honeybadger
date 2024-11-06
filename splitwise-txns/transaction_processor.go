@@ -81,7 +81,8 @@ func NewTransactionProcessor(inputPath string, outputPath string) *TransactionPr
 }
 
 func (tp *TransactionProcessor) Run() error {
-	transactions, err := tp.store.ReadTransactions()
+	rawData := true
+	transactions, err := tp.store.ReadTransactions(rawData)
 	if err != nil {
 		return fmt.Errorf("error reading transactions: %w", err)
 	}

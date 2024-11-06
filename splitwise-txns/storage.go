@@ -28,7 +28,7 @@ var DefaultHeaders = HeaderConfig{
 }
 
 type TransactionStore interface {
-	ReadTransactions() ([]Transaction, error)
+	ReadTransactions(isRawData bool) ([]Transaction, error)
 	SaveTransaction(transaction *Transaction) error
 	//	UpdateTransaction(filename string, id string, transaction model.Transaction)
 }
@@ -55,7 +55,7 @@ func NewCSVStore(fm *FileManager) *CSVStore {
 	}
 }
 
-func (s *CSVStore) ReadTransactions() ([]Transaction, error) {
+func (s *CSVStore) ReadTransactions(isRawData bool) ([]Transaction, error) {
 	file, err := os.Open(s.fileManager.InputPath)
 
 	if err != nil {
@@ -94,7 +94,7 @@ func (s *CSVStore) ReadTransactions() ([]Transaction, error) {
 			return nil, fmt.Errorf("error reading record: %w", err)
 		}
 
-		transaction, err := s.parseTransaction(record)
+		transaction, err := s.parseTransaction(record, isRawData)
 
 		if err != nil {
 			return nil, fmt.Errorf("error parsing record: %w", err)
@@ -158,25 +158,29 @@ func (fm *FileManager) SaveProgress(position int) error {
 	return nil
 }
 
-func (s *CSVStore) parseTransaction(record []string) (Transaction, error) {
+func (s *CSVStore) parseTransaction(record []string, isRawData bool) (Transaction, error) {
 	amount, err := strconv.ParseFloat(record[s.headers.AmtPos], 64)
 
 	if err != nil {
 		return Transaction{}, fmt.Errorf("invalid amount: %w", err)
 	}
 
-//	split, err := strconv.ParseFloat(record[s.headers.SplitPos], 64)
-//	if err != nil {
-//		fmt.Printf("Invalid split input: error converting %s: %v\n", record[s.headers.SplitPos], err)
-//		return Transaction{}, err
-//	}
+	split := 0.0
+
+	if !isRawData { 
+		split, err = strconv.ParseFloat(record[s.headers.SplitPos], 64)
+		if err != nil {
+			fmt.Printf("Invalid split input: error converting %s: %v\n", record[s.headers.SplitPos], err)
+			return Transaction{}, err
+		}
+	} 
 
 	return Transaction{
 		Date:        record[s.headers.DatePos],
 		Description: record[s.headers.DescPos],
 		Amount:      amount,
 		Category:    Category(record[s.headers.CatPos]), //TODO extension of band aid
-		Split:       0.0,
+		Split:       split,
 	}, nil
 }
 
@@ -258,7 +262,7 @@ func (s *CSVStore) readAllTransactions() ([]Transaction, error) {
             return nil, fmt.Errorf("error reading record: %w", err)
         }
 
-        transaction, err := s.parseTransaction(record)
+        transaction, err := s.parseTransaction(record, false)
         if err != nil {
             return nil, fmt.Errorf("error parsing record: %w", err)
         }

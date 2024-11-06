@@ -33,7 +33,8 @@ func NewSummarizeProcessor(projectName string) *SummarizeProcessor {
 }
 
 func (ts *SummarizeProcessor) Run(args []string) error {
-	transactions, err := ts.store.ReadTransactions()
+	rawData := false
+	transactions, err := ts.store.ReadTransactions(rawData)
 
 	if err != nil {
 		return fmt.Errorf("error reading transactions %w", err)
@@ -54,8 +55,9 @@ func Summarize(transactions []Transaction) *SummaryReport {
 	var totalAmount float64
 
 	for _, txn := range transactions {
+		fmt.Println(txn)
 		summary := summaries[txn.Category]
-		summary.TotalAmount += txn.Amount
+		summary.TotalAmount += (txn.Split / 100) * txn.Amount
 		summary.TransactionCount++
 		summaries[txn.Category] = summary
 		totalAmount += txn.Amount
